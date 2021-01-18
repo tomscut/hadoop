@@ -19,6 +19,10 @@ package org.apache.hadoop.hdfs.server.datanode;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_BLOCKREPORT_BATCH_SIZE;
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_BLOCKREPORT_BATCH_SIZE_DEFAULT;
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_BLOCKREPORT_INBATCHES;
+import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_BLOCKREPORT_INBATCHES_DEFAULT;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_BLOCKREPORT_INITIAL_DELAY_DEFAULT;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_BLOCKREPORT_INITIAL_DELAY_KEY;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_BLOCKREPORT_INTERVAL_MSEC_DEFAULT;
@@ -104,6 +108,8 @@ public class DNConf {
   private final long lifelineIntervalMs;
   final long blockReportInterval;
   final long blockReportSplitThreshold;
+  final boolean blockReportInBatches;
+  final long blockReportBatchSize;
   final boolean peerStatsEnabled;
   final boolean diskStatsEnabled;
   final long outliersReportIntervalMs;
@@ -201,6 +207,12 @@ public class DNConf {
     this.blockReportSplitThreshold = getConf().getLong(
         DFS_BLOCKREPORT_SPLIT_THRESHOLD_KEY,
         DFS_BLOCKREPORT_SPLIT_THRESHOLD_DEFAULT);
+    this.blockReportInBatches = getConf().getBoolean(
+            DFS_BLOCKREPORT_INBATCHES,
+            DFS_BLOCKREPORT_INBATCHES_DEFAULT);
+    this.blockReportBatchSize = getConf().getLong(
+            DFS_BLOCKREPORT_BATCH_SIZE,
+            DFS_BLOCKREPORT_BATCH_SIZE_DEFAULT);
     this.cacheReportInterval = getConf().getLong(
         DFS_CACHEREPORT_INTERVAL_MSEC_KEY,
         DFS_CACHEREPORT_INTERVAL_MSEC_DEFAULT);

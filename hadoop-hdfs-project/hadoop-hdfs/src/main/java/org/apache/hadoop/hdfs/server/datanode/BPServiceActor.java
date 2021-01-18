@@ -27,6 +27,7 @@ import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -378,13 +379,39 @@ class BPServiceActor implements Runnable {
     // Convert the reports to the format expected by the NN.
     int i = 0;
     int totalBlockCount = 0;
-    StorageBlockReport reports[] =
-        new StorageBlockReport[perVolumeBlockLists.size()];
+    StorageBlockReport reports[] = {};
+    boolean reportInBatches = dnConf.blockReportInBatches;
 
-    for(Map.Entry<DatanodeStorage, BlockListAsLongs> kvPair : perVolumeBlockLists.entrySet()) {
-      BlockListAsLongs blockList = kvPair.getValue();
-      reports[i++] = new StorageBlockReport(kvPair.getKey(), blockList);
-      totalBlockCount += blockList.getNumberOfBlocks();
+    if (reportInBatches) {
+      long reportBatchSize = dnConf.blockReportBatchSize;  //TODO from config
+      BlockListAsLongs.Builder builder = null;
+      ArrayList<StorageBlockReport> storageBlockReports = new ArrayList<>();
+
+      for(Map.Entry<DatanodeStorage, BlockListAsLongs> kvPair : perVolumeBlockLists.entrySet()) {
+        BlockListAsLongs blockList = kvPair.getValue();
+        Iterator<BlockListAsLongs.BlockReportReplica> iterator = blockList.iterator();
+        for (int j = 0; j < reportBatchSize && iterator.hasNext(); j++) {
+          if (j == 0) {
+            builder = BlockListAsLongs.builder(maxDataLength);
+          }
+          builder.add(iterator.next());
+          if (j == reportBatchSize - 1 || !iterator.hasNext()) {
+            storageBlockReports.add(new StorageBlockReport(kvPair.getKey(), builder.build()));
+            j = -1;
+          }
+        }
+        totalBlockCount += blockList.getNumberOfBlocks();
+      }
+
+      reports = (StorageBlockReport[]) storageBlockReports.toArray();
+    } else {
+      reports = new StorageBlockReport[perVolumeBlockLists.size()];
+
+      for(Map.Entry<DatanodeStorage, BlockListAsLongs> kvPair : perVolumeBlockLists.entrySet()) {
+        BlockListAsLongs blockList = kvPair.getValue();
+        reports[i++] = new StorageBlockReport(kvPair.getKey(), blockList);
+        totalBlockCount += blockList.getNumberOfBlocks();
+      }
     }
 
     // Send the reports to the NN.
