@@ -27,6 +27,7 @@ import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -412,18 +413,48 @@ class BPServiceActor implements Runnable {
         }
       } else {
         // Send one block report per message.
+        boolean batchReport = true;
+        int reportBatchSize = 100;
+        BlockListAsLongs.Builder builder = null;
         for (int r = 0; r < reports.length; r++) {
-          StorageBlockReport singleReport[] = { reports[r] };
-          DatanodeCommand cmd = bpNamenode.blockReport(
-              bpRegistration, bpos.getBlockPoolId(), singleReport,
-              new BlockReportContext(reports.length, r, reportId,
-                  fullBrLeaseId, true));
-          blockReportSizes.add(
-              calculateBlockReportPBSize(useBlocksBuffer, singleReport));
-          numReportsSent++;
-          numRPCs++;
-          if (cmd != null) {
-            cmds.add(cmd);
+          if (batchReport) {
+            StorageBlockReport report = reports[r];
+            Iterator<BlockListAsLongs.BlockReportReplica> iterator = report.getBlocks().iterator();
+
+            for (int j = 0; j < reportBatchSize && iterator.hasNext(); j++) {
+              if (j == 0) {
+                builder = BlockListAsLongs.builder(maxDataLength);
+              }
+              builder.add(iterator.next());
+              if (j == reportBatchSize - 1 || !iterator.hasNext()) {
+                StorageBlockReport singleReport[]  = { new StorageBlockReport(report.getStorage(), builder.build()) };
+                DatanodeCommand cmd = bpNamenode.blockReport(
+                        bpRegistration, bpos.getBlockPoolId(), singleReport,
+                        new BlockReportContext(reports.length, numRPCs, reportId,
+                                fullBrLeaseId, true));
+                blockReportSizes.add(
+                        calculateBlockReportPBSize(useBlocksBuffer, singleReport));
+                numReportsSent++;
+                numRPCs++;
+                if (cmd != null) {
+                  cmds.add(cmd);
+                }
+                j = 0;
+              }
+            }
+          } else {
+            StorageBlockReport singleReport[] = { reports[r] };
+            DatanodeCommand cmd = bpNamenode.blockReport(
+                    bpRegistration, bpos.getBlockPoolId(), singleReport,
+                    new BlockReportContext(reports.length, r, reportId,
+                            fullBrLeaseId, true));
+            blockReportSizes.add(
+                    calculateBlockReportPBSize(useBlocksBuffer, singleReport));
+            numReportsSent++;
+            numRPCs++;
+            if (cmd != null) {
+              cmds.add(cmd);
+            }
           }
         }
       }
