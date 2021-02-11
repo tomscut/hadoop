@@ -431,7 +431,7 @@ class BPServiceActor implements Runnable {
                 DatanodeCommand cmd = bpNamenode.blockReport(
                         bpRegistration, bpos.getBlockPoolId(), singleReport,
                         new BlockReportContext(reports.length, numRPCs, reportId,
-                                fullBrLeaseId, true));
+                                fullBrLeaseId, true)); // reports.length 这个值的长度不对。 totalRpcs
                 blockReportSizes.add(
                         calculateBlockReportPBSize(useBlocksBuffer, singleReport));
                 numReportsSent++;
