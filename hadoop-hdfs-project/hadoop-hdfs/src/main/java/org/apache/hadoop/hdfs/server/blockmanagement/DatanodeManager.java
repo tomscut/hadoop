@@ -20,6 +20,8 @@ package org.apache.hadoop.hdfs.server.blockmanagement;
 import static org.apache.hadoop.hdfs.server.protocol.DatanodeProtocol.DNA_ERASURE_CODING_RECONSTRUCTION;
 import static org.apache.hadoop.util.Time.monotonicNow;
 
+import org.apache.hadoop.thirdparty.com.google.common.collect.Sets;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
 import org.apache.hadoop.thirdparty.com.google.common.net.InetAddresses;
@@ -53,6 +55,7 @@ import org.apache.hadoop.ipc.Server;
 import org.apache.hadoop.net.*;
 import org.apache.hadoop.net.NetworkTopology.InvalidTopologyException;
 import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.util.Daemon;
 import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hadoop.util.Timer;
 
@@ -204,8 +207,14 @@ public class DatanodeManager {
   @Nullable
   private final SlowPeerTracker slowPeerTracker;
   @Nullable
+  private final int maxSlowPeerReportNodes;
+  @Nullable
   private final SlowDiskTracker slowDiskTracker;
-  
+  private static Set<Node> slowPeers = Sets.newConcurrentHashSet();
+  private final long slowPeerCollectionInterval;
+  private Daemon slowPeerCollectorDaemon;
+  private static final String IP_PORT_SEPARATOR = ":";
+
   /**
    * The minimum time between resending caching directives to Datanodes,
    * in milliseconds.
@@ -246,6 +255,16 @@ public class DatanodeManager {
     final Timer timer = new Timer();
     this.slowPeerTracker = dataNodePeerStatsEnabled ?
         new SlowPeerTracker(conf, timer) : null;
+    this.maxSlowPeerReportNodes = conf.getInt(
+        DFSConfigKeys.DFS_NAMENODE_MAX_SLOWPEER_REPORT_NODES_KEY,
+        DFSConfigKeys.DFS_NAMENODE_MAX_SLOWPEER_REPORT_NODES_DEFAULT);
+    this.slowPeerCollectionInterval = conf.getTimeDuration(
+        DFSConfigKeys.DFS_NAMENODE_SLOWPEER_COLLECT_INTERVAL_KEY,
+        DFSConfigKeys.DFS_NAMENODE_SLOWPEER_COLLECT_INTERVAL_DEFAULT,
+        TimeUnit.MILLISECONDS);
+    if (slowPeerTracker != null) {
+      startSlowPeerCollector();
+    }
 
     this.slowDiskTracker = dataNodeDiskStatsEnabled ?
         new SlowDiskTracker(conf, timer) : null;
@@ -356,6 +375,44 @@ public class DatanodeManager {
         DFSConfigKeys.DFS_NAMENODE_BLOCKS_PER_POSTPONEDBLOCKS_RESCAN_KEY_DEFAULT);
   }
 
+  private void startSlowPeerCollector() {
+    if (slowPeerCollectorDaemon != null) {
+      return;
+    }
+    slowPeerCollectorDaemon = new Daemon(new Runnable() {
+      @Override
+      public void run() {
+        while (true) {
+          try {
+            slowPeers = getSlowPeers();
+          } catch (Exception e) {
+            LOG.error("Slow peers collected failed", e);
+          }
+
+          try {
+            Thread.sleep(slowPeerCollectionInterval);
+          } catch (InterruptedException e) {
+            LOG.error("Slow peers collection thread interrupted", e);
+            return;
+          }
+        }
+      }
+    });
+    slowPeerCollectorDaemon.start();
+  }
+
+  public void stopSlowPeerCollector() {
+    if (slowPeerCollectorDaemon == null) {
+      return;
+    }
+    slowPeerCollectorDaemon.interrupt();
+    try {
+      slowPeerCollectorDaemon.join();
+    } catch (InterruptedException e) {
+      LOG.error("Slow peers collection daemon did not shutdown", e);
+    }
+  }
+
   private static long getStaleIntervalFromConf(Configuration conf,
       long heartbeatExpireInterval) {
     long staleInterval = conf.getLong(
@@ -401,6 +458,7 @@ public class DatanodeManager {
   void close() {
     datanodeAdminManager.close();
     heartbeatManager.close();
+    stopSlowPeerCollector();
   }
 
   /** @return the network topology. */
@@ -2017,6 +2075,45 @@ public class DatanodeManager {
    */
   public String getSlowPeersReport() {
     return slowPeerTracker != null ? slowPeerTracker.getJson() : null;
+  }
+
+  /**
+   * Returns all tracking slow peers.
+   * @return
+   */
+  public Set<Node> getSlowPeers() {
+    Set<Node> slowPeersSet = Sets.newConcurrentHashSet();
+    if (slowPeerTracker == null) {
+      return slowPeersSet;
+    }
+    Collection<String> slowNodes = slowPeerTracker.getSlowNodes(maxSlowPeerReportNodes);
+    for (String slowNode : slowNodes) {
+      if (StringUtils.isBlank(slowNode) || !slowNode.contains(IP_PORT_SEPARATOR)) {
+        continue;
+      }
+      String ipAddr = slowNode.split(IP_PORT_SEPARATOR)[0];
+      DatanodeDescriptor datanodeByHost = host2DatanodeMap.getDatanodeByHost(ipAddr);
+      if (datanodeByHost != null) {
+        slowPeersSet.add(datanodeByHost);
+      }
+    }
+    return slowPeersSet;
+  }
+
+  /**
+   * Returns all tracking slow peers.
+   * @return
+   */
+  public static Set<Node> getSlowNodes() {
+    return slowPeers;
+  }
+
+  /**
+   * Use only for testing.
+   */
+  @VisibleForTesting
+  public SlowPeerTracker getSlowPeerTracker() {
+    return slowPeerTracker;
   }
 
   /**

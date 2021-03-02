@@ -34,6 +34,7 @@ import org.apache.hadoop.util.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -79,7 +80,7 @@ public class SlowPeerTracker {
    * Number of nodes to include in JSON report. We will return nodes with
    * the highest number of votes from peers.
    */
-  private static final int MAX_NODES_TO_REPORT = 5;
+  private int maxSlowPeerReportNodes = 5;
 
   /**
    * Information about peers that have reported a node as being slow.
@@ -103,6 +104,9 @@ public class SlowPeerTracker {
         DFSConfigKeys.DFS_DATANODE_OUTLIERS_REPORT_INTERVAL_KEY,
         DFSConfigKeys.DFS_DATANODE_OUTLIERS_REPORT_INTERVAL_DEFAULT,
         TimeUnit.MILLISECONDS) * 3;
+    this.maxSlowPeerReportNodes = conf.getInt(
+        DFSConfigKeys.DFS_NAMENODE_MAX_SLOWPEER_REPORT_NODES_KEY,
+        DFSConfigKeys.DFS_NAMENODE_MAX_SLOWPEER_REPORT_NODES_DEFAULT);
   }
 
   /**
@@ -193,7 +197,7 @@ public class SlowPeerTracker {
    */
   public String getJson() {
     Collection<ReportForJson> validReports = getJsonReports(
-        MAX_NODES_TO_REPORT);
+      maxSlowPeerReportNodes);
     try {
       return WRITER.writeValueAsString(validReports);
     } catch (JsonProcessingException e) {
@@ -228,6 +232,20 @@ public class SlowPeerTracker {
     public SortedSet<String> getReportingNodes() {
       return reportingNodes;
     }
+  }
+
+  /**
+   * Returns all tracking slow peers.
+   * @param numNodes
+   * @return
+   */
+  public Collection<String> getSlowNodes(int numNodes) {
+    Collection<ReportForJson> jsonReports = getJsonReports(numNodes);
+    ArrayList<String> slowNodes = new ArrayList<>();
+    for (ReportForJson jsonReport : jsonReports) {
+      slowNodes.add(jsonReport.getSlowNode());
+    }
+    return slowNodes;
   }
 
   /**
