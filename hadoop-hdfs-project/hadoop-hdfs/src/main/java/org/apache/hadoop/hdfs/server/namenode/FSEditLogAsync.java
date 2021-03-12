@@ -28,6 +28,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.hadoop.hdfs.server.namenode.metrics.NameNodeMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -231,15 +232,18 @@ class FSEditLogAsync extends FSEditLog implements Runnable {
   public void run() {
     try {
       while (true) {
+        NameNodeMetrics metrics = NameNode.getNameNodeMetrics();
         boolean doSync;
         Edit edit = dequeueEdit();
         if (edit != null) {
           // sync if requested by edit log.
           doSync = edit.logEdit();
           syncWaitQ.add(edit);
+          metrics.setEitPending(editPendingQ.size() + 1);
         } else {
           // sync when editq runs dry, but have edits pending a sync.
           doSync = !syncWaitQ.isEmpty();
+          metrics.setEitPending(editPendingQ.size());
         }
         if (doSync) {
           // normally edit log exceptions cause the NN to terminate, but tests
