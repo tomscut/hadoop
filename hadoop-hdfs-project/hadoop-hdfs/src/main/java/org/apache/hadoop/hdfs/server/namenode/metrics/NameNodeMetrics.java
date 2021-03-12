@@ -87,8 +87,8 @@ public class NameNodeMetrics {
   MutableGaugeInt blockOpsQueued;
   @Metric("Number of blockReports and blockReceivedAndDeleted batch processed")
   MutableCounterLong blockOpsBatched;
-  @Metric("Number of blockReports and blockReceivedAndDeleted batch processed")
-  MutableGaugeInt editPending;
+  @Metric("Number of edit pending")
+  MutableGaugeInt editPendingCount;
 
   @Metric("Number of file system operations")
   public long totalFileOps(){
@@ -345,8 +345,8 @@ public class NameNodeMetrics {
     blockOpsBatched.incr(count);
   }
 
-  public void setEitPending(int size) {
-    editPending.set(size);
+  public void setEditPendingCount(int size) {
+    editPendingCount.set(size);
   }
 
   public void addTransaction(long latency) {
