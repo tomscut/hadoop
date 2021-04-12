@@ -106,6 +106,12 @@ class FSEditLogAsync extends FSEditLog implements Runnable {
     startSyncThread();
   }
 
+  // add getEditPendingQElementOp for testing in  FSEditLogAsync
+  @VisibleForTesting
+  public FSEditLogOp getEditPendingQElementOp() {
+    return editPendingQ.element().op;
+  }
+
   @Override
   void openForWrite(int layoutVersion) throws IOException {
     try {

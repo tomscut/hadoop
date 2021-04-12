@@ -37,6 +37,7 @@ import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.net.URI;
 import java.util.ArrayList;
@@ -1880,5 +1881,65 @@ public class TestEditLog {
 
     editLog.close();
     cluster.shutdown();
+  }
+
+  @Test
+  public void testEditLogAsync() throws Exception {
+    // start a cluster
+    Configuration conf = getConf();
+    conf.setBoolean(DFSConfigKeys.DFS_NAMENODE_EDITS_ASYNC_LOGGING, true);
+    MiniDFSCluster cluster = null;
+    FileSystem fileSys = null;
+    try {
+      cluster = new MiniDFSCluster.Builder(conf).numDataNodes(NUM_DATA_NODES).build();
+      cluster.waitActive();
+      fileSys = cluster.getFileSystem();
+      final FSNamesystem namesystem = cluster.getNamesystem();
+      FSImage fsimage = namesystem.getFSImage();
+      final FSEditLogAsync editLog = (FSEditLogAsync)fsimage.getEditLog();
+
+      // prepare a file with one block
+//      int blocksPerFile = 1;
+//      short replication =1;
+      long blockSize = 2048;
+//      long blockGenStamp = 10000;
+//      BlockInfo[] blocks = new BlockInfo[blocksPerFile];
+//      for (int iB = 0; iB < blocksPerFile; ++iB)
+//
+//      { blocks[iB] = new BlockInfoContiguous(new Block(0, blockSize, blockGenStamp), replication); }
+//      INodeId inodeId = new INodeId();
+//      final INodeFile inode = new INodeFile(inodeId.nextValue(), null,
+//              new PermissionStatus("joeDoe", "people",
+//                      new FsPermission((short)0777))
+//              , 0L, 0L, blocks, replication, blockSize);
+
+//      editLog.logCloseFile("/testfile", inode);
+
+//      fileSys.create(new Path("/testfile"), true, 64, new Short("3"), blockSize);
+//      fileSys.completeLocalOutput();
+
+      final byte[] data = "foo".getBytes();
+      FileSystem fs = FileSystem.get(conf);
+      OutputStream out = fs.create(new Path("/test"));
+
+      out.write(data);
+
+      fileSys.truncate(new Path("/testfile"), 1024);
+
+      // Quickly get CloseOp from the FSEditLogAsync.editPendingQ
+      // If not quickly, it may be consumed and can't reproduce the issue.
+      long closeOpBlockNumByte = ((FSEditLogOp.CloseOp) editLog.getEditPendingQElementOp())
+              .getBlocks()[0].getNumBytes();
+
+      // closeOpBlockNumByte should be equal to blockSize, but it has been set to newBlockSize
+      assertEquals(closeOpBlockNumByte, blockSize);
+
+      editLog.close();
+    } finally {
+      if(fileSys != null)
+        fileSys.close();
+      if(cluster != null)
+        cluster.shutdown();
+    }
   }
 }
